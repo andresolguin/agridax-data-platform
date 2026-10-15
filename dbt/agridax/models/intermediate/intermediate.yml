@@ -1,0 +1,259 @@
+version: 2
+models:
+- name: int_field_daily_activity
+  description: 'Daily agricultural activity metrics at one row per field_id + activity_date.
+    Event quantities are aggregated only when their units are semantically compatible
+    with the event type, avoiding meaningless cross-unit totals.
+
+    '
+  columns:
+  - name: field_id
+    description: Field business identifier.
+    data_tests:
+    - not_null
+  - name: activity_date
+    description: UTC business date derived from event_timestamp.
+    data_tests:
+    - not_null
+  - name: event_count
+    description: Number of deduplicated logical field events for the field and date.
+    data_tests:
+    - not_null
+  - name: irrigation_mm
+    description: Total irrigation quantity in millimeters when applicable.
+    data_tests: []
+  - name: fertilizer_kg
+    description: Total fertilizer quantity in kilograms when applicable.
+    data_tests: []
+  - name: pesticide_kg
+    description: Total pesticide quantity in kilograms when applicable.
+    data_tests: []
+  - name: harvest_kg
+    description: Total harvest quantity in kilograms when applicable.
+    data_tests: []
+- name: int_field_daily_weather
+  description: 'Daily weather metrics at one row per field_id + weather_date, derived
+    from deduplicated weather observations.
+
+    '
+  columns:
+  - name: field_id
+    description: Field business identifier.
+    data_tests:
+    - not_null
+  - name: weather_date
+    description: UTC business date derived from observed_at.
+    data_tests:
+    - not_null
+  - name: observation_count
+    description: Number of logical weather observations contributing to the daily
+      row.
+    data_tests:
+    - not_null
+  - name: avg_temperature_c
+    description: Average daily temperature in Celsius.
+    data_tests: []
+  - name: rainfall_mm
+    description: Total daily rainfall in millimeters.
+    data_tests: []
+  - name: avg_humidity_pct
+    description: Average daily relative humidity percentage.
+    data_tests: []
+  - name: avg_wind_speed_kmh
+    description: Average daily wind speed in kilometers per hour.
+    data_tests: []
+- name: int_field_daily_conditions
+  description: 'Daily field-level combination of agricultural activity and weather
+    conditions. A full outer join preserves activity-only and weather-only dates so
+    temporary source latency does not silently remove business periods.
+
+    '
+  columns:
+  - name: field_id
+    description: Field business identifier resolved from either activity or weather.
+    data_tests:
+    - not_null
+  - name: activity_date
+    description: 'Canonical UTC business date for the combined row. The model preserves
+      a row when only one source is available for that field and date.
+
+      '
+    data_tests:
+    - not_null
+- name: int_field_history
+  description: 'Business-effective SCD Type 2 field history reconstructed deterministically
+    from canonical RAW field states. Business validity is derived from effective_from
+    and is independent from dbt snapshot execution time.
+
+    '
+  columns:
+  - name: field_id
+    description: Stable field business identifier.
+    data_tests:
+    - not_null
+  - name: field_state_valid_from
+    description: Business-effective start timestamp for this field state.
+    data_tests:
+    - not_null
+  - name: field_state_valid_to
+    description: 'Exclusive business-effective end timestamp for this field state.
+      Null identifies the open-ended latest state.
+
+      '
+    data_tests: []
+- name: int_field_events_with_history
+  description: 'Logical field events enriched with the field state that was valid
+    at event time. Temporal matching uses the half-open business interval [field_state_valid_from,
+    field_state_valid_to).
+
+    '
+  columns:
+  - name: source_system
+    description: System that produced the logical event.
+    data_tests:
+    - not_null
+  - name: source_event_id
+    description: Stable logical event identifier within source_system.
+    data_tests:
+    - not_null
+  - name: field_id
+    description: Field associated with the event.
+    data_tests:
+    - not_null
+  - name: event_timestamp
+    description: Business event timestamp used for the temporal history join.
+    data_tests:
+    - not_null
+  - name: field_history_match_status
+    description: 'Temporal enrichment status. Trusted events are expected to resolve
+      to exactly one matched historical field state.
+
+      '
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - matched
+          - unmatched_temporal_state
+- name: int_field_sustainability_metrics
+  description: One row per field aggregating latest source-reported practice states.
+    Active means source status active; no historical validity-period or as-of-day
+    activity inference is implemented.
+  columns:
+  - name: field_id
+    description: Stable field business identifier. Grain is one row per field_id.
+    data_tests:
+    - not_null
+    - unique
+  - name: practice_count
+    description: Number of current sustainability-practice assignments for the field.
+    data_tests:
+    - not_null
+  - name: active_practice_count
+    description: Number of current practice assignments with status active.
+    data_tests:
+    - not_null
+  - name: verified_practice_count
+    description: Number of current practice assignments marked as verified.
+    data_tests:
+    - not_null
+  - name: verified_active_practice_count
+    description: Number of practice assignments that are both active and verified.
+    data_tests:
+    - not_null
+  - name: has_active_cover_crop
+    description: Whether the field currently has an active cover-crop practice.
+    data_tests:
+    - not_null
+  - name: has_active_reduced_tillage
+    description: Whether the field currently has an active reduced-tillage practice.
+    data_tests:
+    - not_null
+  - name: has_active_crop_rotation
+    description: Whether the field currently has an active crop-rotation practice.
+    data_tests:
+    - not_null
+  - name: has_active_water_efficiency
+    description: Whether the field currently has an active water-efficiency practice.
+    data_tests:
+    - not_null
+  - name: has_active_organic_fertilizer
+    description: Whether the field currently has an active organic-fertilizer practice.
+    data_tests:
+    - not_null
+- name: int_field_crop_cycles
+  description: One cycle per logical planting; first harvest in [planting,next planting)
+    closes. Without harvest, superseded if next planting exists, otherwise open. Simultaneous
+    distinct plantings fail a required test.
+  columns:
+  - name: crop_cycle_id
+    description: 'Deterministic crop-cycle identifier derived from field_id plus the
+      logical planting-event key.
+
+      '
+    data_tests:
+    - not_null
+    - unique
+  - name: field_id
+    description: Field business identifier associated with the crop cycle.
+    data_tests:
+    - not_null
+  - name: planting_source_system
+    description: Source system that produced the planting event.
+    data_tests:
+    - not_null
+  - name: planting_source_event_id
+    description: Stable source event identifier of the planting event.
+    data_tests:
+    - not_null
+  - name: planted_at
+    description: Business timestamp at which the crop cycle began.
+    data_tests:
+    - not_null
+  - name: crop_type_at_planting
+    description: 'Crop type from the business-effective field history that was valid
+      at the planting timestamp.
+
+      '
+    data_tests: []
+  - name: harvested_at
+    description: 'Business timestamp of the first qualifying harvest within the crop-cycle
+      boundary. Null for open or superseded cycles.
+
+      '
+    data_tests: []
+  - name: crop_cycle_status
+    description: closed at first harvest, open without a successor planting, or superseded
+      by next planting without harvest.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - open
+          - closed
+          - superseded
+  - name: cycle_duration_days
+    description: Fractional days planting to FIRST harvest; NULL for open/superseded
+      cycles.
+    data_tests: []
+- name: int_harvest_cycle_assignment
+  description: 'One row per trusted harvest: closing_harvest, additional_harvest or
+    before_first_planting. Additional/orphan quantities remain in event/daily facts.'
+  columns:
+  - name: source_system
+    data_tests:
+    - not_null
+  - name: source_event_id
+    data_tests:
+    - not_null
+  - name: assignment_status
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - closing_harvest
+          - additional_harvest
+          - before_first_planting

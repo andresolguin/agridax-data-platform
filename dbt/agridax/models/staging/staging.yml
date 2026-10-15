@@ -1,0 +1,428 @@
+models:
+- name: stg_farms
+  description: 'Current normalized farm state. If RAW contains multiple delivered
+    versions for the same farm_id, the model deterministically retains the latest
+    version by updated_at, then ingested_at, then raw_record_id.
+
+    '
+  columns:
+  - name: raw_record_id
+    description: Physical RAW ingestion surrogate of the selected source record.
+    data_tests:
+    - not_null
+  - name: farm_id
+    description: Stable farm business identifier. Grain is one row per farm_id.
+    data_tests:
+    - not_null
+    - unique
+    - non_blank
+  - name: farm_name
+    description: Normalized farm display name.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: country_code
+    description: Uppercase ISO-style two-character country code.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: created_at
+    description: Source timestamp when the farm entity was created.
+    data_tests:
+    - not_null
+  - name: updated_at
+    description: Source timestamp of the selected farm state.
+    data_tests:
+    - not_null
+  - name: ingested_at
+    description: Platform ingestion timestamp of the selected RAW record.
+    data_tests:
+    - not_null
+- name: stg_fields
+  description: 'One current state per field_id: greatest business effective_from at
+    or before the managed processing horizon. History is reconstructed independently
+    from RAW state winners.'
+  columns:
+  - name: raw_record_id
+    description: Physical RAW ingestion surrogate of the selected source record.
+    data_tests:
+    - not_null
+  - name: field_id
+    description: Stable field business identifier. Grain is one row per field_id.
+    data_tests:
+    - not_null
+    - unique
+    - non_blank
+  - name: farm_id
+    description: Parent farm business identifier.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('stg_farms')
+          field: farm_id
+        config:
+          severity: warn
+    - non_blank
+  - name: field_name
+    description: Normalized field display name.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: area_hectares
+    description: Field area in hectares.
+    data_tests:
+    - not_null
+    - finite
+  - name: status
+    description: Normalized current operational status.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - active
+          - inactive
+          - fallow
+    - non_blank
+  - name: created_at
+    description: Source timestamp when the field entity was created.
+    data_tests:
+    - not_null
+  - name: effective_from
+    description: 'Business-effective timestamp from which the selected field state
+      is valid. This is distinct from source update time and platform ingestion time.
+
+      '
+    data_tests:
+    - not_null
+  - name: updated_at
+    description: Source timestamp of the selected field state.
+    data_tests:
+    - not_null
+  - name: ingested_at
+    description: Platform ingestion timestamp of the selected RAW record.
+    data_tests:
+    - not_null
+- name: stg_field_events
+  description: Trusted view of valid current canonical event winners, one row per
+    normalized source_system + source_event_id. Rejection and canonical processing
+    live in stg_field_event_winners.
+  columns:
+  - name: raw_record_id
+    description: Physical RAW ingestion surrogate of the retained event version.
+    data_tests:
+    - not_null
+  - name: event_id
+    description: Platform-visible event identifier supplied by the ingestion layer.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: source_system
+    description: System that produced the logical event.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: source_event_id
+    description: Stable event identifier within source_system.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: field_id
+    description: Field associated with the event.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('stg_fields')
+          field: field_id
+        config:
+          severity: warn
+    - non_blank
+  - name: event_type
+    description: Normalized agricultural event category.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - planting
+          - irrigation
+          - fertilizer
+          - pesticide
+          - harvest
+          - soil_measurement
+    - non_blank
+  - name: event_timestamp
+    description: Business timestamp when the agricultural event occurred.
+    data_tests:
+    - not_null
+  - name: ingested_at
+    description: Arrival metadata of the selected RAW revision; not a checkpoint or
+      event-time completeness watermark.
+    data_tests:
+    - not_null
+  - name: unit
+    description: Required normalized business value.
+    data_tests:
+    - non_blank
+  - name: quantity
+    description: Required finite non-negative event measurement; zero remains observed.
+    data_tests:
+    - finite
+- name: quarantine_field_events
+  description: 'Business-invalid physical field-event deliveries retained for observability
+    and remediation. Records remain available in RAW and are excluded from trusted
+    staging. Grain is one row per quarantined raw_record_id.
+
+    '
+  columns:
+  - name: raw_record_id
+    description: Physical RAW ingestion surrogate of the rejected delivery.
+    data_tests:
+    - not_null
+    - unique
+  - name: ingested_at
+    description: Platform ingestion timestamp of the rejected physical delivery.
+    data_tests:
+    - not_null
+  - name: rejection_reason
+    description: Deterministic business-validation reason that caused quarantine.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - missing_event_id
+          - missing_source_system
+          - missing_source_event_id
+          - missing_field_id
+          - missing_event_type
+          - missing_event_timestamp
+          - unsupported_event_type
+          - missing_quantity
+          - negative_quantity
+          - missing_unit
+          - invalid_unit_for_planting
+          - invalid_unit_for_irrigation
+          - invalid_unit_for_mass_event
+          - invalid_unit_for_soil_measurement
+          - non_finite_quantity
+- name: stg_weather_observations
+  description: Trusted view of valid canonical observations, one row per normalized
+    field_id + observed_at. This grain intentionally selects one revision across providers
+    under the declared revision contract.
+  columns:
+  - name: raw_record_id
+    description: Physical RAW ingestion surrogate of the retained observation version.
+    data_tests:
+    - not_null
+  - name: observation_id
+    description: Source or platform observation identifier.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: field_id
+    description: Field associated with the observation.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('stg_fields')
+          field: field_id
+        config:
+          severity: warn
+    - non_blank
+  - name: observed_at
+    description: Business timestamp of the environmental observation.
+    data_tests:
+    - not_null
+  - name: source_system
+    description: Weather provider that produced the observation.
+    data_tests:
+    - not_null
+    - non_blank
+  - name: ingested_at
+    description: Arrival metadata of the selected RAW revision; not a checkpoint or
+      event-time completeness watermark.
+    data_tests:
+    - not_null
+  - name: temperature_c
+    description: Finite measurement when present; NULL is not replaced with zero.
+    data_tests:
+    - finite
+  - name: rainfall_mm
+    description: Finite measurement when present; NULL is not replaced with zero.
+    data_tests:
+    - finite
+  - name: humidity_pct
+    description: Finite measurement when present; NULL is not replaced with zero.
+    data_tests:
+    - finite
+  - name: wind_speed_kmh
+    description: Finite measurement when present; NULL is not replaced with zero.
+    data_tests:
+    - finite
+- name: quarantine_weather_observations
+  description: 'Business-invalid physical weather-observation deliveries retained
+    for observability and remediation. Records remain available in RAW and are excluded
+    from trusted staging. Grain is one row per quarantined raw_record_id.
+
+    '
+  columns:
+  - name: raw_record_id
+    description: Physical RAW ingestion surrogate of the rejected delivery.
+    data_tests:
+    - not_null
+    - unique
+  - name: ingested_at
+    description: Platform ingestion timestamp of the rejected physical delivery.
+    data_tests:
+    - not_null
+  - name: rejection_reason
+    description: Deterministic business-validation reason that caused quarantine.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - missing_observation_id
+          - missing_field_id
+          - missing_observed_at
+          - missing_source_system
+          - missing_ingested_at
+          - invalid_humidity_pct
+          - negative_rainfall
+          - negative_wind_speed
+          - non_finite_temperature
+          - non_finite_humidity
+          - non_finite_rainfall
+          - non_finite_wind_speed
+- name: stg_sustainability_practices
+  description: 'Current normalized sustainability-practice state. If multiple delivered
+    states exist for the same practice_id, the latest source state is selected deterministically.
+
+    '
+  columns:
+  - name: raw_record_id
+    description: Physical RAW ingestion surrogate of the selected practice state.
+    data_tests:
+    - not_null
+  - name: practice_id
+    description: Stable practice-assignment identifier. Grain is one row per practice_id.
+    data_tests:
+    - not_null
+    - unique
+    - non_blank
+  - name: field_id
+    description: Field associated with the sustainability practice.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('stg_fields')
+          field: field_id
+        config:
+          severity: warn
+    - non_blank
+  - name: practice_type
+    description: Normalized sustainability-practice category.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - cover_crop
+          - reduced_tillage
+          - crop_rotation
+          - water_efficiency
+          - organic_fertilizer
+    - non_blank
+  - name: status
+    description: Normalized current practice status.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - planned
+          - active
+          - completed
+          - cancelled
+    - non_blank
+  - name: verified
+    description: Whether the current practice state is verified.
+    data_tests:
+    - not_null
+  - name: valid_from
+    description: Business-effective start date of the practice assignment.
+    data_tests:
+    - not_null
+  - name: updated_at
+    description: Source timestamp of the selected practice state.
+    data_tests:
+    - not_null
+  - name: ingested_at
+    description: Platform ingestion timestamp of the selected RAW record.
+    data_tests:
+    - not_null
+- name: stg_field_event_winners
+  description: 'Canonical state including physical winner identity. Business-invalid
+    event/weather winners remain observable; trusted views filter rejection metadata.
+    Grain: source_system + source_event_id.'
+  columns:
+  - name: raw_record_id
+    data_tests:
+    - not_null
+    - unique
+  - name: source_system
+    data_tests:
+    - not_null
+  - name: source_event_id
+    data_tests:
+    - not_null
+- name: stg_weather_observation_winners
+  description: 'Canonical state including physical winner identity. Business-invalid
+    event/weather winners remain observable; trusted views filter rejection metadata.
+    Grain: field_id + observed_at.'
+  columns:
+  - name: raw_record_id
+    data_tests:
+    - not_null
+    - unique
+  - name: field_id
+    data_tests:
+    - not_null
+  - name: observed_at
+    data_tests:
+    - not_null
+- name: stg_field_state_winners
+  description: 'Canonical RAW field-state revisions including physical winner identity.
+    Grain: field_id + effective_from. Business history is derived from all states;
+    invalid historical area blocks validation rather than being silently accepted.'
+  columns:
+  - name: raw_record_id
+    data_tests:
+    - not_null
+    - unique
+  - name: field_id
+    data_tests:
+    - not_null
+  - name: effective_from
+    data_tests:
+    - not_null
+snapshots:
+- name: snap_fields
+  description: Observed changes to CURRENT field state; business history comes from
+    RAW. Check excludes ingestion-only retries. warehouse_observed_at is observation
+    transaction time and drives timezone-aware metadata.
+  columns:
+  - name: field_id
+    data_tests:
+    - not_null
+  - name: warehouse_observed_at
+    data_tests:
+    - not_null
+  - name: dbt_valid_from
+    data_tests:
+    - not_null

@@ -1,0 +1,213 @@
+version: 2
+models:
+- name: dim_farms
+  description: 'Current farm dimension at one row per farm_id. The dimension combines
+    normalized farm master data with current field-level rollups for analytical consumption.
+
+    '
+  columns:
+  - name: farm_id
+    description: Stable farm business identifier and dimension grain.
+    data_tests:
+    - not_null
+    - unique
+  - name: farm_name
+    description: Current farm display name.
+    data_tests:
+    - not_null
+  - name: country_code
+    description: Current two-character country code.
+    data_tests:
+    - not_null
+  - name: field_count
+    description: Number of current fields associated with the farm.
+    data_tests:
+    - not_null
+  - name: active_field_count
+    description: Number of current fields with active status.
+    data_tests:
+    - not_null
+  - name: total_area_hectares
+    description: Sum of current field area in hectares for the farm.
+    data_tests:
+    - not_null
+  - name: current_crop_type_count
+    description: Number of distinct non-null current crop types across the farm's
+      fields.
+    data_tests:
+    - not_null
+- name: dim_fields
+  description: 'Current field dimension at one row per field_id. The dimension combines
+    the current trusted field state with field-level sustainability metrics. Historical
+    event facts must not use this dimension to infer past field attributes.
+
+    '
+  columns:
+  - name: field_id
+    description: Stable field business identifier and dimension grain.
+    data_tests:
+    - not_null
+    - unique
+  - name: farm_id
+    description: Parent farm identifier.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_farms')
+          field: farm_id
+  - name: status
+    description: Current field operational status.
+    data_tests:
+    - not_null
+  - name: practice_count
+    description: Number of current sustainability-practice assignments.
+    data_tests:
+    - not_null
+  - name: verified_active_practice_count
+    description: Number of current practice assignments that are both active and verified.
+    data_tests:
+    - not_null
+- name: fct_field_events
+  description: 'Event-level fact table at one row per logical source event. The fact
+    preserves the business-effective field context that was valid at event time, preventing
+    historical metrics from being reinterpreted using the field''s current state.
+
+    '
+  columns:
+  - name: source_system
+    description: System that produced the logical event.
+    data_tests:
+    - not_null
+  - name: source_event_id
+    description: Stable event identifier within source_system.
+    data_tests:
+    - not_null
+  - name: field_id
+    description: Field associated with the event.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_fields')
+          field: field_id
+  - name: farm_id
+    description: Farm associated with the historical field state valid at event time.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_farms')
+          field: farm_id
+  - name: event_type
+    description: Agricultural event category.
+    data_tests:
+    - not_null
+  - name: event_timestamp
+    description: Business timestamp when the event occurred.
+    data_tests:
+    - not_null
+  - name: crop_type_at_event
+    description: Crop type from the field state that was valid at event time.
+    data_tests: []
+  - name: field_status_at_event
+    description: Field status from the field state that was valid at event time.
+    data_tests:
+    - not_null
+- name: fct_field_daily_performance
+  description: One row per field/day present in activity or weather. Flags mean source
+    presence, not full-day event-time completeness. Both sources absent produces no
+    row; measured 0 and NULL absence remain distinct.
+  columns:
+  - name: field_id
+    description: Stable field business identifier.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_fields')
+          field: field_id
+  - name: business_date
+    description: UTC business date for the daily field-performance row.
+    data_tests:
+    - not_null
+  - name: has_activity_data
+    description: Whether activity data contributed to the field/day row.
+    data_tests:
+    - not_null
+  - name: has_weather_data
+    description: Whether weather data contributed to the field/day row.
+    data_tests:
+    - not_null
+  - name: data_completeness_status
+    description: 'Source-coverage classification for the field/day row. This preserves
+      the distinction between both-source coverage and a legitimate partial-source
+      day.
+
+      '
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - both_sources
+          - activity_only
+          - weather_only
+          - unexpected_empty
+- name: fct_crop_cycles
+  description: 'Crop-cycle fact at one row per crop_cycle_id. The fact preserves planting-time
+    field context and, for closed cycles harvested in kilograms, derives yield per
+    hectare using the field area that was valid at planting time.
+
+    '
+  columns:
+  - name: crop_cycle_id
+    description: Deterministic crop-cycle identifier and fact grain.
+    data_tests:
+    - not_null
+    - unique
+  - name: field_id
+    description: Field associated with the crop cycle.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_fields')
+          field: field_id
+  - name: farm_id
+    description: Farm associated with the planting-time field state.
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_farms')
+          field: farm_id
+  - name: planted_at
+    description: Business timestamp when the crop cycle began.
+    data_tests:
+    - not_null
+  - name: crop_cycle_status
+    description: closed at first harvest, open without a successor planting, or superseded
+      by next planting without harvest.
+    data_tests:
+    - not_null
+    - accepted_values:
+        arguments:
+          values:
+          - open
+          - closed
+          - superseded
+  - name: area_hectares_at_planting
+    description: Field area that was valid at planting time.
+    data_tests: []
+  - name: harvest_quantity
+    description: FIRST closing harvest quantity; not total cycle production. Additional
+      harvests are reconciled separately.
+    data_tests: []
+  - name: harvest_unit
+    description: Unit associated with harvest_quantity, when present.
+    data_tests: []
+  - name: yield_kg_per_hectare
+    description: First-closing-harvest kg / whole-field area valid at planting; NULL
+      without a closing harvest. Not total cycle production.
+    data_tests: []

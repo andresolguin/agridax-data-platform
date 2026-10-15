@@ -1,0 +1,15 @@
+agridax:
+  target: dev
+
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', '127.0.0.1') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      user: "{{ env_var('DBT_USER', 'agridax_transform') }}"
+      password: "{{ env_var('DBT_ENV_SECRET_PASSWORD') }}"
+      dbname: "{{ env_var('POSTGRES_DB') }}"
+      schema: analytics
+      threads: "{{ env_var('DBT_THREADS', '4') | int }}"
+      connect_timeout: "{{ env_var('CONNECT_TIMEOUT_SECONDS', '5') | int }}"
+      application_name: "{{ env_var('DBT_ENV_SECRET_RUN_TOKEN', 'agridax_inspect') }}"

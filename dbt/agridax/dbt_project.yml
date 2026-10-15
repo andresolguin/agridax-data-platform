@@ -1,0 +1,23 @@
+name: 'agridax'
+version: '1.1.0'
+
+profile: 'agridax'
+on-run-start:
+  - "{{ managed_run_hook() }}"
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+  
+models:
+  agridax:
+    marts:
+      +post-hook:
+        - "grant select on {{ this }} to {{ adapter.quote(env_var('PUBLISH_USER', 'agridax_publish')) }}"

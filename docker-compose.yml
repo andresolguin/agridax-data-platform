@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:16.15-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Configure POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:?Configure POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Generate private credentials}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - agridax_postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          export PGPASSWORD="$${POSTGRES_PASSWORD}";
+          test "$$(psql -h 127.0.0.1 -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"
+          -Atqc "select (to_regclass('raw.fields') is not null and to_regclass('raw.field_events') is not null)::int")" = "1"
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+volumes:
+  agridax_postgres_data:
