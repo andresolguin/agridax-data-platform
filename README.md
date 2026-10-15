@@ -1,3 +1,5 @@
+![AgriDax Data Platform — Target GCP Architecture](docs/AgriDax_GCP_Architecture.png)
+
 # AgriDax Data Platform
 
 AgriDax is an analytical data platform for agricultural operations, field events, weather, sustainability practices and crop-cycle analytics. The executable local implementation uses PostgreSQL 16, dbt Core, Python, Docker Compose and PowerShell. GCP with BigQuery is the target deployment architecture; it is not deployed by this working tree.
